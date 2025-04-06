@@ -5,6 +5,7 @@ com\stdiscm\producer\UploadQueue.class
 com\stdiscm\consumer\ConsumerWorker.class
 com\stdiscm\gui\ProducerMultiClientGUI.class
 com\stdiscm\producer\ProducerWorker.class
+com\stdiscm\consumer\ConsumerGalleryGUI.class
 com\stdiscm\consumer\QueueProcessor.class
 com\stdiscm\consumer\ConsumerClient.class
 com\stdiscm\LauncherMain.class
