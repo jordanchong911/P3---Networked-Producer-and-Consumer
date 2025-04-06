@@ -17,6 +17,9 @@ public class ConsumerClient {
     public static void run(String host, int port, int queueSize, Label statusLabel) {
         BlockingQueue<VideoPacket> queue = new ArrayBlockingQueue<>(queueSize);
 
+        // 🆕 Launch the consumer GUI to view videos
+        new Thread(() -> ConsumerGalleryGUI.launchGUI()).start();
+
         // Thread to listen for uploads
         new Thread(() -> {
             try (ServerSocket server = new ServerSocket(port)) {
