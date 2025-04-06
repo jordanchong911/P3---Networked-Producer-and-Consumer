@@ -1,10 +1,8 @@
 package com.stdiscm.producer;
 
-import com.stdiscm.shared.VideoPacket;
-
 import java.io.*;
 import java.net.Socket;
-import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 
 public class ProducerClient {
 
@@ -32,15 +30,29 @@ public class ProducerClient {
     // Uploads a single selected file (used by the GUI)
     public static void sendFile(File videoFile, String host, int port) {
         try (Socket socket = new Socket(host, port);
-             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
+            DataOutputStream dos = new DataOutputStream(
+                        new BufferedOutputStream(socket.getOutputStream()));
+            FileInputStream fis = new FileInputStream(videoFile)) {
 
-            byte[] data = Files.readAllBytes(videoFile.toPath());
-            VideoPacket packet = new VideoPacket(videoFile.getName(), data);
-            out.writeObject(packet);
+            // Write the file name length and file name (using UTF-8 encoding).
+            byte[] nameBytes = videoFile.getName().getBytes(StandardCharsets.UTF_8);
+            dos.writeInt(nameBytes.length);
+            dos.write(nameBytes);
+
+            // Write the file length.
+            long fileLength = videoFile.length();
+            dos.writeLong(fileLength);
+
+            // Stream the file in chunks instead of reading it all at once.
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                dos.write(buffer, 0, bytesRead);
+            }
+            dos.flush();
 
             System.out.println("Uploaded: " + videoFile.getName());
-
-        } catch (Exception e) {
+        } catch (IOException e) {
             System.err.println("Failed to upload file: " + videoFile.getName());
             e.printStackTrace();
         }

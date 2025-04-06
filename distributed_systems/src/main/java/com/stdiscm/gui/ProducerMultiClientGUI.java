@@ -1,6 +1,8 @@
 package com.stdiscm.gui;
 
 import com.stdiscm.producer.ProducerClient;
+import com.stdiscm.shared.ConfigLoader;
+
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -41,6 +43,10 @@ public class ProducerMultiClientGUI {
     }
 
     private static void showFolderChoosers(int count) {
+        ConfigLoader config = new ConfigLoader("config.properties");
+        String host = config.getConsumerHost();
+        int port = config.getConsumerPort();
+        
         for (int i = 1; i <= count; i++) {
             int index = i;
             Platform.runLater(() -> {
@@ -59,7 +65,7 @@ public class ProducerMultiClientGUI {
                             VIDEO_EXT.stream().anyMatch(name.toLowerCase()::endsWith));
                         if (videos != null && videos.length > 0) {
                             status.setText("Uploading " + videos.length + " files...");
-                            new Thread(() -> ProducerClient.sendFolder(folder, "localhost", 9999)).start();
+                            new Thread(() -> ProducerClient.sendFolder(folder, host, port)).start();
                         } else {
                             status.setText("No valid video files.");
                         }
