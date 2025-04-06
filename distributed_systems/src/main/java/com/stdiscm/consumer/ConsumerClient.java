@@ -18,7 +18,7 @@ public class ConsumerClient {
         BlockingQueue<VideoPacket> queue = new ArrayBlockingQueue<>(queueSize);
 
         // 🆕 Launch the consumer GUI to view videos
-        new Thread(() -> ConsumerGalleryGUI.launchGUI()).start();
+        ConsumerGalleryGUI.showGallery();
 
         // Thread to listen for uploads
         new Thread(() -> {

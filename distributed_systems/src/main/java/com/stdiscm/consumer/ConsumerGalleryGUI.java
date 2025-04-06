@@ -1,6 +1,5 @@
 package com.stdiscm.consumer;
 
-import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -15,20 +14,24 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 
-public class ConsumerGalleryGUI extends Application {
+public class ConsumerGalleryGUI {
 
     private static final File UPLOAD_DIR = new File("uploads");
     private static final List<String> VIDEO_EXTS = Arrays.asList(".mp4", ".avi", ".mov", ".mkv");
 
-    private ListView<File> videoList;
-    private MediaView mediaView;
+    private ListView<File> videoList = new ListView<>();
+    private MediaView mediaView = new MediaView();
 
-    @Override
-    public void start(Stage primaryStage) {
+    public static void showGallery() {
+        Platform.runLater(() -> {
+            ConsumerGalleryGUI gui = new ConsumerGalleryGUI();
+            gui.showStage();
+        });
+    }
+
+    private void showStage() {
+        Stage primaryStage = new Stage();
         primaryStage.setTitle("Uploaded Videos");
-
-        videoList = new ListView<>();
-        mediaView = new MediaView();
 
         updateVideoList();
 
@@ -49,7 +52,7 @@ public class ConsumerGalleryGUI extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        startWatcherThread(); // auto-refresh video list
+        startWatcherThread();
     }
 
     private void playVideo(File file) {
@@ -90,9 +93,5 @@ public class ConsumerGalleryGUI extends Application {
         });
         watcher.setDaemon(true);
         watcher.start();
-    }
-
-    public static void launchGUI() {
-        Application.launch(ConsumerGalleryGUI.class);
     }
 }
