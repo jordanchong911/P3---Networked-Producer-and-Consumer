@@ -2,13 +2,12 @@ package com.stdiscm.gui;
 
 import com.stdiscm.consumer.ConsumerClient;
 import com.stdiscm.consumer.ConsumerGalleryGUI;
-import com.stdiscm.consumer.UploadStatus;
 import com.stdiscm.shared.ConfigLoader;
+import com.stdiscm.shared.UploadStatus;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -100,8 +99,8 @@ public class ConsumerMultiClientGUI {
 
 
         VBox vbox = new VBox(tableView);
-        vbox.setAlignment(Pos.CENTER);
-        Scene scene = new Scene(vbox, 400, 300);
+        vbox.setPadding(new Insets(10));
+        Scene scene = new Scene(vbox, 410, 300);
         progressStage.setScene(scene);
         progressStage.show();
     }

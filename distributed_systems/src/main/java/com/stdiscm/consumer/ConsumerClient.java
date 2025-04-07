@@ -1,121 +1,143 @@
 package com.stdiscm.consumer;
 
-// import com.stdiscm.shared.VideoPacket;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
 
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
 
-import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import com.stdiscm.shared.UploadStatus;
 
-public class ConsumerClient  {
-    private int port;
-    private int consumerThreads;
-    private File uploadDir;
-    private BlockingQueue<File> videoQueue;
-    // Callback to update the GUI's video list
-    private ObservableList<UploadStatus> progressList;
+public class ConsumerClient {
+    private final int port;
+    private final int consumerThreads;
+    private final File uploadDir;
+    private final BlockingQueue<QueuedUpload> videoQueue;
+    private final ObservableList<UploadStatus> progressList;
+
+    private volatile boolean running;
+    private ExecutorService consumerExecutor;
+    private ServerSocket serverSocket;
+    private Thread serverThread;
+    private final List<ConsumerWorker> workers = new ArrayList<>();
 
     public ConsumerClient(int port, int consumerThreads, int maxQueueLength, ObservableList<UploadStatus> progressList) {
-        uploadDir = new File("uploads");
-        if (!uploadDir.exists()) {
-            uploadDir.mkdirs();
-        }
-        
         this.port = port;
         this.consumerThreads = consumerThreads;
         this.progressList = progressList;
+        this.uploadDir = new File("uploads");
+        if (!uploadDir.exists()) {
+            uploadDir.mkdirs();
+        }
         this.videoQueue = new ArrayBlockingQueue<>(maxQueueLength);
     }
 
     public void start() {
-        // Start the server in a separate thread.
-        new Thread(new UploadServer()).start();
-        // Start the video processing thread that polls the queue.
+        running = true;
+        consumerExecutor = Executors.newFixedThreadPool(consumerThreads);
+
+        for (int i = 0; i < consumerThreads; i++) {
+            ConsumerWorker worker = new ConsumerWorker(videoQueue, uploadDir, progressList);
+            workers.add(worker);
+            consumerExecutor.execute(worker);
+        }
+
+        serverThread = new Thread(new UploadServer(), "UploadServerThread");
+        serverThread.start();
     }
 
+    public void stop() {
+        running = false;
 
-    // The server listens for incoming upload connections.
-    private class UploadServer implements Runnable {
-        @Override
-        public void run() {
-            try (ServerSocket serverSocket = new ServerSocket(port)) {
-                System.out.println("ConsumerClient listening on port " + port);
-                ExecutorService executor = Executors.newFixedThreadPool(consumerThreads);
-                System.out.println(consumerThreads);
-                while (true) {
-                    Socket socket = serverSocket.accept();
-                    executor.execute(new UploadHandler(socket));
-                }
-            } catch (IOException ex) {
-                ex.printStackTrace();
+        if (serverSocket != null && !serverSocket.isClosed()) {
+            try {serverSocket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
+        if (serverThread != null && serverThread.isAlive()) {
+            try { serverThread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        for (ConsumerWorker worker : workers) worker.stop();
+        if (consumerExecutor != null) {
+            consumerExecutor.shutdown(); // allow ongoing tasks to complete
+            try {
+                if (!consumerExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    System.out.println("Worker threads did not shut down gracefully. Forcing shutdown.");
+                    consumerExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                consumerExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        System.out.println("ConsumerClient stopped.");
     }
 
-    // Handles a single upload connection.
-    private class UploadHandler implements Runnable {
-        private Socket socket;
-
-        public UploadHandler(Socket socket) {
-            this.socket = socket;
-        }
+    private class UploadServer implements Runnable {
 
         @Override
         public void run() {
-            final UploadStatus[] statusHolder = new UploadStatus[1]; // Final wrapper for UploadStatus
-            try (DataInputStream dis = new DataInputStream(socket.getInputStream())) {
-                // Read the file name.
-                int fileNameLength = dis.readInt();
-                byte[] fileNameBytes = new byte[fileNameLength];
-                dis.readFully(fileNameBytes);
-                String fileName = new String(fileNameBytes);
-
-                // Read the file size.
-                long fileSize = dis.readLong();
-                
-                statusHolder[0] = new UploadStatus(fileName);
-                Platform.runLater(() -> progressList.add(statusHolder[0]));
-
-                // Save the file to the uploads folder.
-                File outFile = new File(uploadDir, UUID.randomUUID() + "_" + fileName);
-                try (FileOutputStream fos = new FileOutputStream(outFile)) {
-                    byte[] buffer = new byte[4096];
-                    long totalRead = 0;
-                    int read;
-                    while (totalRead < fileSize &&
-                           (read = dis.read(buffer, 0, (int) Math.min(buffer.length, fileSize - totalRead))) != -1) {
-                        fos.write(buffer, 0, read);
-                        totalRead += read;
-                        // Update progress (from 0.0 to 1.0)
-                        double progress = (double) totalRead / fileSize;
-                        Platform.runLater(() -> statusHolder[0].setProgress(progress));
-                    }
-                }
-                System.out.println("Received file: " + fileName);
-
-                // Try to add the video file to the queue (leaky bucket).
-                if (!videoQueue.offer(outFile)) {
-                    System.out.println("Queue full, dropping video: " + fileName);
-                } else {
-
-                }
-            } catch (Exception ex) {
-                ex.printStackTrace();
+            try (ServerSocket server = new ServerSocket(port)) {
+                serverSocket = server;
+                System.out.println("ConsumerClient listening on port " + port);
+                while (running) handleClient();
+            } catch (IOException e) {
+                if (running) e.printStackTrace();
             } finally {
-                if (statusHolder[0] != null) {
-                    Platform.runLater(() -> progressList.remove(statusHolder[0]));
-                }
-                try {
+                System.out.println("Upload server stopping...");
+            }
+        }
+    
+        private void handleClient() {
+            Socket socket = null;
+            try {
+                // Accept the next incoming connection
+                socket = serverSocket.accept();
+                DataInputStream dis = new DataInputStream(socket.getInputStream());
+                DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+    
+                // Read metadata: file name length, file name, and file length.
+                int fileNameLength = dis.readInt();
+                byte[] nameBytes = new byte[fileNameLength];
+                dis.readFully(nameBytes);
+                String fileName = new String(nameBytes, StandardCharsets.UTF_8);
+    
+                // Prepare the upload status and the queued upload object.
+                UploadStatus status = new UploadStatus(fileName);
+                QueuedUpload queuedUpload = new QueuedUpload(socket, status, fileName);
+    
+                // Try to add the queued upload to the processing queue.
+                if (!videoQueue.offer(queuedUpload)) {
+                    System.out.println("Queue full, dropping video: " + fileName);
+                    dos.writeUTF("FULLQUEUE");
+                    dos.flush();
                     socket.close();
-                } catch (IOException e) {
-                    // Ignore close exception.
+                } else {
+                    // Signal the client to start streaming file data.
+                    dos.writeUTF("QUEUED");
+                    dos.flush();
+                    Platform.runLater(() -> progressList.add(status));
+                    queuedUpload.setReady();
+                }
+            } catch (IOException e) {
+                if (running) e.printStackTrace();
+                // In case of error, close the socket if it hasn't been closed.
+                if (socket != null && !socket.isClosed()) {
+                    try {socket.close();
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
                 }
             }
         }
