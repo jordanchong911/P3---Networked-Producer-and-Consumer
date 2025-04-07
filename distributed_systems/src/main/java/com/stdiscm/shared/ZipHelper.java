@@ -1,7 +1,9 @@
 package com.stdiscm.shared;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.zip.*;
+import java.util.Arrays;
 import java.util.List;
 
 public class ZipHelper {
@@ -30,7 +32,25 @@ public class ZipHelper {
         }
     }
 
-    public static File extractVideoFromZip(File zipFile, File destDir, List<String> videoExts) throws IOException {
+    private static final List<String> VIDEO_EXTS = Arrays.asList(".mp4", ".avi", ".mov", ".mkv");
+    
+    public static File tryExtract (File video) {
+          File videoFile = video;
+                if (video.getName().toLowerCase().endsWith(".zip")) {
+                    try {
+                        File tempDir = Files.createTempDirectory("extractedZip").toFile();
+                        videoFile = extractVideoFromZip(video, tempDir);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    if (videoFile == null) {
+                        System.err.println("No video file found in the zip archive: " + video.getName());
+                    }
+                }
+        return videoFile;
+    }
+    
+    public static File extractVideoFromZip(File zipFile, File destDir) throws IOException {
            File videoFile = null;
            try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
                ZipEntry entry;
@@ -38,7 +58,7 @@ public class ZipHelper {
                    if (entry.isDirectory()) continue;
    
                    final String entryName = entry.getName().toLowerCase();
-                   boolean isVideo = videoExts.stream().anyMatch(entryName::endsWith);
+                   boolean isVideo = VIDEO_EXTS.stream().anyMatch(entryName::endsWith);
    
                    if (isVideo) {
                        File outFile = new File(destDir, new File(entry.getName()).getName());

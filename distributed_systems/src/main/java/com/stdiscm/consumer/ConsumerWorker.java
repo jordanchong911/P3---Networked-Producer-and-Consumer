@@ -10,17 +10,21 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
 import com.stdiscm.shared.UploadStatus;
+import com.stdiscm.shared.ZipHelper;
+import com.stdiscm.shared.DuplicateChecker;
 
 public class ConsumerWorker implements Runnable {
+    private final DuplicateChecker duplicateChecker;
     private final BlockingQueue<QueuedUpload> videoQueue;
     private final File uploadDir;
     private final ObservableList<UploadStatus> progressList;
     private volatile boolean running = true;
 
-    public ConsumerWorker(BlockingQueue<QueuedUpload> videoQueue, File uploadDir, ObservableList<UploadStatus> progressList) {
+    public ConsumerWorker(BlockingQueue<QueuedUpload> videoQueue, File uploadDir, ObservableList<UploadStatus> progressList, DuplicateChecker duplicateChecker) {
         this.videoQueue = videoQueue;
         this.uploadDir = uploadDir;
         this.progressList = progressList;
+        this.duplicateChecker = duplicateChecker;
     }
 
     public void stop() {
@@ -32,7 +36,9 @@ public class ConsumerWorker implements Runnable {
         while (running) {
             try {
                 QueuedUpload upload = videoQueue.take(); // blocks
-                while (!upload.isReady()) Thread.sleep(10); // Sleep for a while before checking again
+                while (!upload.isReady()) {Thread.sleep(10);
+                System.out.println("ready" + upload.isReady());
+                } // Sleep for a while before checking again
                 processUpload(upload);
             } catch (InterruptedException e) {
                 if (!running) break; // Exit cleanly
@@ -78,8 +84,18 @@ public class ConsumerWorker implements Runnable {
             fos.flush();
             }
 
-            dos.writeUTF("SUCCESS");
-            dos.flush();
+            File videoFile = ZipHelper.tryExtract(outFile);
+            String fileHash = duplicateChecker.computeFileHash(videoFile);
+
+            if (duplicateChecker.isDuplicate(fileHash)) {
+                dos.writeUTF("DUPLICATE");
+                dos.flush();
+                videoFile.delete();
+            } else {
+                duplicateChecker.register(fileHash);
+                dos.writeUTF("SUCCESS");
+                dos.flush();
+            }
             
         } catch (IOException e) {
             System.out.println("Upload failed for " + upload.getFileName());

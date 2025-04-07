@@ -17,7 +17,6 @@ import javafx.util.Duration;
 import com.stdiscm.shared.ZipHelper;
 
 import java.io.File;
-import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
 
@@ -143,15 +142,7 @@ public class ConsumerGalleryGUI {
      */
     private void playVideo(File file) {
         try {
-            File videoFile = file;
-            if (file.getName().toLowerCase().endsWith(ZIP_EXT)) {
-                File tempDir = Files.createTempDirectory("extractedZip").toFile();
-                videoFile = ZipHelper.extractVideoFromZip(file, tempDir, VIDEO_EXTS);
-                if (videoFile == null) {
-                    System.err.println("No video file found in the zip archive: " + file.getName());
-                    return;
-                }
-            }
+            File videoFile = ZipHelper.tryExtract(file);
             Media media = new Media(videoFile.toURI().toString());
             MediaPlayer player = new MediaPlayer(media);
             mediaView.setMediaPlayer(player);
@@ -174,15 +165,7 @@ public class ConsumerGalleryGUI {
         previewCancelled = false;
         previewThread = new Thread(() -> {
             try {
-                File videoFile = file;
-                if (file.getName().toLowerCase().endsWith(ZIP_EXT)) {
-                    File tempDir = Files.createTempDirectory("extractedZip").toFile();
-                    videoFile = ZipHelper.extractVideoFromZip(file, tempDir, VIDEO_EXTS);
-                    if (videoFile == null) {
-                        System.err.println("No video file found in the zip archive: " + file.getName());
-                        return;
-                    }
-                }
+                File videoFile = ZipHelper.tryExtract(file);
                 if (previewCancelled) return;
                 Media media = new Media(videoFile.toURI().toString());
                 Platform.runLater(() -> {

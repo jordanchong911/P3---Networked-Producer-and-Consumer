@@ -15,8 +15,7 @@ import javafx.scene.control.ProgressBar;
 public class ProducerClient {
 
     public static void sendFile(File videoFile, String host, int port, ObservableList<UploadStatus> uploadStatuses) {
-        File zipFile = null;
-        boolean compressed = false;
+
         
         try (Socket socket = new Socket(host, port);
              DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
@@ -30,22 +29,21 @@ public class ProducerClient {
                 updateLatestStatus("queued", uploadStatuses);
                 System.out.println("File queued: " + videoFile.getName());
 
-                zipFile = new File(videoFile.getParent(), videoFile.getName() + ".zip");
-                compressed = ZipHelper.compressFile(videoFile, zipFile);
-                File fileToSend = compressed ? zipFile : videoFile;
-
                 String processingResponse = dis.readUTF();
                 if ("UPLOADING".equals(processingResponse)) {
                     updateLatestStatus("uploading", uploadStatuses);
 
-                    sendFileData(fileToSend, dos, socket, uploadStatuses);
+                    sendFileData(videoFile, dos, socket, uploadStatuses);
                     // Wait for server's final confirmation
                     String finalResponse = dis.readUTF();
 
                     if ("SUCCESS".equals(finalResponse)) {
                         updateLatestStatus("success", uploadStatuses);
                         System.out.println("Upload successful: " + videoFile.getName());
-                    } else {
+                    } else if ("DUPLICATE".equals(finalResponse)) {
+                        updateLatestStatus("duplicate", uploadStatuses);
+                        System.out.println("Upload duplicate: " + videoFile.getName());
+                    } else{
                         updateLatestStatus("failed", uploadStatuses);
                         System.err.println("Upload failed or not acknowledged for file: " + videoFile.getName());
                     }
@@ -64,13 +62,7 @@ public class ProducerClient {
             updateLatestStatus("failed", uploadStatuses);
             System.err.println("Failed to upload file: " + videoFile.getName());
             e.printStackTrace();
-        } finally {
-            if (compressed && zipFile != null && zipFile.exists()) {
-                if (!zipFile.delete()) {
-                    System.err.println("Failed to delete temporary zip: " + zipFile.getName());
-                }
-            }
-        }
+        } 
     }
 
     public static void sendFolder(File folder, String host, int port, Label status, ProgressBar progBar, ObservableList<UploadStatus> uploadStatuses) {
@@ -87,16 +79,20 @@ public class ProducerClient {
         for (File video : videoFiles) {
             String msg = "Uploading from folder: " + folder.getName() + "\nFile: " + video.getName();
             Platform.runLater(() -> status.setText(msg));
-            addStatus(video.getName(), "Uploading", uploadStatuses);
-            sendFile(video, host, port, uploadStatuses);
+            addStatus(video.getName(), "compressing", uploadStatuses);
 
-            // Simulate a delay between uploads
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.err.println("Folder upload interrupted.");
-                return;
+            File zipFile = null;
+            boolean compressed = false;
+            zipFile = new File(video.getParent(), video.getName() + ".zip");
+            compressed = ZipHelper.compressFile(video, zipFile);
+            File fileToSend = compressed ? zipFile : video;
+
+            sendFile(fileToSend, host, port, uploadStatuses);
+
+            if (compressed && zipFile != null && zipFile.exists()) {
+                if (!zipFile.delete()) {
+                    System.err.println("Failed to delete temporary zip: " + zipFile.getName());
+                }
             }
         }
 

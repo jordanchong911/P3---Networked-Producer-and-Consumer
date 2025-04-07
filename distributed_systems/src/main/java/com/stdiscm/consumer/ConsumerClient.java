@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 
+import com.stdiscm.shared.DuplicateChecker;
 import com.stdiscm.shared.UploadStatus;
 
 public class ConsumerClient {
@@ -40,9 +41,10 @@ public class ConsumerClient {
     public void start() {
         running = true;
         consumerExecutor = Executors.newFixedThreadPool(consumerThreads);
+        DuplicateChecker checker = new DuplicateChecker();
 
         for (int i = 0; i < consumerThreads; i++) {
-            ConsumerWorker worker = new ConsumerWorker(videoQueue, uploadDir, progressList);
+            ConsumerWorker worker = new ConsumerWorker(videoQueue, uploadDir, progressList, checker);
             workers.add(worker);
             consumerExecutor.execute(worker);
         }
