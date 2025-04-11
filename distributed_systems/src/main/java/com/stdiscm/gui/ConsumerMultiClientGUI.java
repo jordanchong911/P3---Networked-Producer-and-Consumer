@@ -2,7 +2,7 @@ package com.stdiscm.gui;
 
 import com.stdiscm.consumer.ConsumerClient;
 import com.stdiscm.consumer.ConsumerGalleryGUI;
-import com.stdiscm.shared.ConfigLoader;
+import com.stdiscm.shared.ConfigHelper;
 import com.stdiscm.shared.UploadStatus;
 
 import javafx.collections.FXCollections;
@@ -48,8 +48,10 @@ public class ConsumerMultiClientGUI {
     }
     
     private static void launchConsumers(int count, int queueSize) {
-        ConfigLoader config = new ConfigLoader("config.properties");
-        int port = config.getConsumerPort();
+               String propertiesFilePath = "config.properties";
+    ConfigHelper config = new ConfigHelper(propertiesFilePath);
+        
+        int port = config.getPort();
 
         // Initialize the observable list for uploaded video names.
         ObservableList<UploadStatus> progressList = FXCollections.observableArrayList();

@@ -30,6 +30,7 @@ public class ConsumerClient {
     DuplicateChecker duplicateChecker;
 
     public ConsumerClient(int port, int consumerThreads, int maxQueueLength, ObservableList<UploadStatus> progressList) {
+        
         this.port = port;
         this.consumerThreads = consumerThreads;
         this.workers = new ArrayList<>();

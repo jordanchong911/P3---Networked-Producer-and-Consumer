@@ -1,7 +1,7 @@
 package com.stdiscm.gui;
 
 import com.stdiscm.producer.ProducerClient;
-import com.stdiscm.shared.ConfigLoader;
+import com.stdiscm.shared.ConfigHelper;
 import com.stdiscm.shared.UploadStatus;
 
 import javafx.application.Platform;
@@ -47,9 +47,12 @@ public class ProducerMultiClientGUI {
     }
 
     private static void showFolderChoosers(int count) {
-        ConfigLoader config = new ConfigLoader("config.properties");
-        String host = config.getConsumerHost();
-        int port = config.getConsumerPort();
+       String propertiesFilePath = "config.properties";
+    ConfigHelper config = new ConfigHelper(propertiesFilePath);
+        
+        String host = config.getHost();
+        int port = config.getPort();
+
         
         for (int i = 1; i <= count; i++) {
             int index = i;

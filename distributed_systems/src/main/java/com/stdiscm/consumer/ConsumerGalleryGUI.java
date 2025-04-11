@@ -35,7 +35,9 @@ public class ConsumerGalleryGUI {
     private PauseTransition previewStopTimer;
     private Thread previewThread;
     private volatile boolean previewCancelled = false;
-    
+
+    private MediaPlayer fullPlayer;         // active full‐video player
+    private Label currentPlayingCell;   
     // Add this field to your class.
     private File currentPreviewFile = null;
 
@@ -129,11 +131,26 @@ public class ConsumerGalleryGUI {
         });
         // Click effect: fill the cell and play full video.
         cell.addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
-            // Clear any preview and set a filled background for selection.
             stopPreview();
-            cell.setStyle("-fx-background-color: lightblue;");
-            playVideo(file);
+             if (currentPlayingCell == null || !cell.equals(currentPlayingCell)) {
+                stopFullVideo();                  // stop any old video
+                currentPlayingCell = cell;        // mark this one
+                cell.setStyle("-fx-background-color: lightblue;");
+                playVideo(file);
+            }
+            else {
+                stopFullVideo();
+            }
         });
+        cell.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
+            // only clear hover‐style if this cell is _not_ the currently playing one
+            if (cell != currentPlayingCell) {
+                cell.setStyle("-fx-border-color: transparent; -fx-background-color: transparent;");
+            }
+            stopPreview();
+        });
+        
+        
         return cell;
     }
 
@@ -144,16 +161,25 @@ public class ConsumerGalleryGUI {
         try {
             File videoFile = ZipHelper.tryExtract(file);
             Media media = new Media(videoFile.toURI().toString());
-            MediaPlayer player = new MediaPlayer(media);
-            mediaView.setMediaPlayer(player);
-            player.play();
+            fullPlayer = new MediaPlayer(media);
+    
+            // When full video ends, clear the flag and cell selection style
+            fullPlayer.setOnEndOfMedia(this::stopFullVideo);
+            fullPlayer.setOnStopped   (this::stopFullVideo);
+    
+            mediaView.setMediaPlayer(fullPlayer);
+            fullPlayer.play();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
+    
 
     private void previewVideo(File file) {
         // If the file is already being previewed, don't restart.
+        if (currentPlayingCell != null) {
+            return;
+        }
         if (file.equals(currentPreviewFile)) {
             return;
         }
@@ -186,6 +212,9 @@ public class ConsumerGalleryGUI {
     }
     
     private void stopPreview() {
+        if (currentPlayingCell != null) {
+            return;
+        }
         previewCancelled = true;
         if (previewThread != null && previewThread.isAlive()) {
             previewThread.interrupt();
@@ -201,6 +230,18 @@ public class ConsumerGalleryGUI {
             previewPlayer = null;
         }
         currentPreviewFile = null;
+    }
+
+    private void stopFullVideo() {
+        if (fullPlayer != null) {
+            fullPlayer.stop();
+            fullPlayer.dispose();
+            fullPlayer = null;
+        }
+        if (currentPlayingCell != null) {
+            currentPlayingCell.setStyle("-fx-background-color: transparent;");
+            currentPlayingCell = null;
+        }
     }
     
 
