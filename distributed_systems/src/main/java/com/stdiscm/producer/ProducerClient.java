@@ -79,21 +79,11 @@ public class ProducerClient {
         for (File video : videoFiles) {
             String msg = "Uploading from folder: " + folder.getName() + "\nFile: " + video.getName();
             Platform.runLater(() -> status.setText(msg));
-            addStatus(video.getName(), "compressing", uploadStatuses);
+            addStatus(video.getName(), "preparing", uploadStatuses);
 
-            File zipFile = null;
-            boolean compressed = false;
-            zipFile = new File(video.getParent(), video.getName() + ".zip");
-            compressed = ZipHelper.compressFile(video, zipFile);
-            File fileToSend = compressed ? zipFile : video;
-
+            File fileToSend = prepareFileForUpload(video, uploadStatuses);
             sendFile(fileToSend, host, port, uploadStatuses);
-
-            if (compressed && zipFile != null && zipFile.exists()) {
-                if (!zipFile.delete()) {
-                    System.err.println("Failed to delete temporary zip: " + zipFile.getName());
-                }
-            }
+            cleanupTempZip(video);
         }
 
         Platform.runLater(() -> status.setText("Upload complete for folder: " + folder.getName() + "\nWaiting..."));
@@ -160,4 +150,35 @@ public class ProducerClient {
             e.printStackTrace();
         }
     }
+
+    /**
+ * Compresses the given file if beneficial, updates uploadStatuses, and returns
+ * the file to actually send (either the .zip or the original).
+ */
+private static File prepareFileForUpload(File original, ObservableList<UploadStatus> uploadStatuses) {
+    String baseName = stripExtension(original.getName());
+    File zipFile = new File(original.getParent(), baseName + ".zip");
+
+    boolean compressed = ZipHelper.compressFile(original, zipFile);
+    return compressed ? zipFile : original;
+}
+
+/**
+ * Deletes the temporary zip file if it exists.
+ */
+private static void cleanupTempZip(File original) {
+    String baseName = stripExtension(original.getName());
+    File zipFile = new File(original.getParent(), baseName + ".zip");
+    if (zipFile.exists() && !zipFile.delete()) {
+        System.err.println("Failed to delete temporary zip: " + zipFile.getName());
+    }
+}
+
+/**
+ * Utility to strip the extension from a filename.
+ */
+private static String stripExtension(String filename) {
+    int dotIndex = filename.lastIndexOf('.');
+    return (dotIndex > 0) ? filename.substring(0, dotIndex) : filename;
+}
 }

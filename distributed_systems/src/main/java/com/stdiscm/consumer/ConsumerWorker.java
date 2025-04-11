@@ -8,6 +8,8 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
@@ -100,7 +102,8 @@ public class ConsumerWorker implements Runnable {
                 }
             } else {
                 duplicateChecker.register(fileHash);
-                File destFile = new File(uploadDir, UUID.randomUUID() + "_" + fileName);
+                System.out.print(generateNewFileName(fileName) );
+                File destFile = new File(uploadDir, generateNewFileName(fileName) );
                 Files.move(tempFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 dos.writeUTF("SUCCESS");
                 dos.flush();
@@ -114,5 +117,46 @@ public class ConsumerWorker implements Runnable {
             try {socket.close();
             } catch (IOException ignored) {}
         }
+    }
+
+    /**
+     * Generates a new file name by appending a timestamp and a unique UUID.
+     * <p>
+     * If the original file is compressed (ends with ".zip"), the method retains the ".zip"
+     * extension. Otherwise, it uses the original file's extension.
+     *
+     * @param originalName The original file name.
+     * @return A cleaner, unique file name with timestamp and UUID, retaining the correct extension.
+     */
+    public static String generateNewFileName(String originalName) {
+        String baseName;
+        String extension = "";
+
+        // Check if the file is compressed (i.e. ends with ".zip")
+        if (originalName.toLowerCase().endsWith(".zip")) {
+            // Retain the ".zip" extension
+            extension = ".zip";
+            // Remove the ".zip" part to leave the underlying name (could be "video.mp4" if original was "video.mp4.zip")
+            baseName = originalName.substring(0, originalName.length() - 4);
+        } else {
+            int dotIndex = originalName.lastIndexOf('.');
+            if (dotIndex > 0 && dotIndex < originalName.length() - 1) {
+                baseName = originalName.substring(0, dotIndex);
+                extension = originalName.substring(dotIndex); // includes the dot
+            } else {
+                // In case there's no dot, treat the entire string as the base name, without extension.
+                baseName = originalName;
+            }
+        }
+        
+        // Generate a timestamp in the format: yyyyMMddHHmmss
+        String timestamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        // Generate a UUID to ensure uniqueness
+        String shortUuid = UUID.randomUUID().toString().substring(0, 12);
+
+
+        // Combine the base name, timestamp, UUID, and extension to create a new file name.
+        String newFileName = baseName + "_" + timestamp + "_" + shortUuid + extension;
+        return newFileName;
     }
 }
