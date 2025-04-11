@@ -6,6 +6,8 @@ import javafx.collections.ObservableList;
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 
@@ -72,9 +74,11 @@ public class ConsumerWorker implements Runnable {
             long remaining = fileLength;
             int bytesRead;
 
-            File outFile = new File(uploadDir, UUID.randomUUID() + "_" + fileName);
+            File tempFile = File.createTempFile("upload_", "_" + fileName);
+
+            // File outFile = new File(uploadDir, UUID.randomUUID() + "_" + fileName);
             try (
-                FileOutputStream fos = new FileOutputStream(outFile)) {
+                FileOutputStream fos = new FileOutputStream(tempFile)) {
             while (remaining > 0 && (bytesRead = dis.read(buffer, 0, (int) Math.min(buffer.length, remaining))) != -1) {
                 fos.write(buffer, 0, bytesRead);
                 remaining -= bytesRead;
@@ -84,15 +88,20 @@ public class ConsumerWorker implements Runnable {
             fos.flush();
             }
 
-            File videoFile = ZipHelper.tryExtract(outFile);
+            File videoFile = ZipHelper.tryExtract(tempFile);
             String fileHash = duplicateChecker.computeFileHash(videoFile);
 
             if (duplicateChecker.isDuplicate(fileHash)) {
                 dos.writeUTF("DUPLICATE");
                 dos.flush();
-                videoFile.delete();
+                boolean deleted = tempFile.delete();
+                if (!deleted) {
+                    System.err.println("Failed to delete duplicate temporary file: " + tempFile.getName());
+                }
             } else {
                 duplicateChecker.register(fileHash);
+                File destFile = new File(uploadDir, UUID.randomUUID() + "_" + fileName);
+                Files.move(tempFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 dos.writeUTF("SUCCESS");
                 dos.flush();
             }

@@ -13,6 +13,7 @@ import java.util.concurrent.*;
 
 import com.stdiscm.shared.DuplicateChecker;
 import com.stdiscm.shared.UploadStatus;
+import com.stdiscm.shared.ZipHelper;
 
 public class ConsumerClient {
     private final int port;
@@ -25,26 +26,25 @@ public class ConsumerClient {
     private ExecutorService consumerExecutor;
     private ServerSocket serverSocket;
     private Thread serverThread;
-    private final List<ConsumerWorker> workers = new ArrayList<>();
+    private final List<ConsumerWorker> workers ;
+    DuplicateChecker duplicateChecker;
 
     public ConsumerClient(int port, int consumerThreads, int maxQueueLength, ObservableList<UploadStatus> progressList) {
         this.port = port;
         this.consumerThreads = consumerThreads;
+        this.workers = new ArrayList<>();
         this.progressList = progressList;
-        this.uploadDir = new File("uploads");
-        if (!uploadDir.exists()) {
-            uploadDir.mkdirs();
-        }
+        this.duplicateChecker = new DuplicateChecker();
         this.videoQueue = new ArrayBlockingQueue<>(maxQueueLength);
+        this.uploadDir = initiateUploadFolder("uploads");
     }
 
     public void start() {
         running = true;
         consumerExecutor = Executors.newFixedThreadPool(consumerThreads);
-        DuplicateChecker checker = new DuplicateChecker();
 
         for (int i = 0; i < consumerThreads; i++) {
-            ConsumerWorker worker = new ConsumerWorker(videoQueue, uploadDir, progressList, checker);
+            ConsumerWorker worker = new ConsumerWorker(videoQueue, uploadDir, progressList, duplicateChecker);
             workers.add(worker);
             consumerExecutor.execute(worker);
         }
@@ -143,5 +143,67 @@ public class ConsumerClient {
                 }
             }
         }
+    }
+
+    public File initiateUploadFolder(String pathName) {
+        // Use the provided pathName if needed; otherwise, default to "uploads"
+        File uploadDir = new File(pathName);
+
+        // Try to create the directory if it doesn't exist.
+        if (!uploadDir.exists() && !uploadDir.mkdirs()) {
+            System.err.println("Could not create upload directory.");
+            return uploadDir;
+        } else if (!uploadDir.exists()) {
+            // This branch is just a safe fallback, though it will never be reached
+            System.err.println("Upload directory does not exist after mkdirs attempt.");
+            return uploadDir;
+        } else {
+            // Directory created or already exists.
+            System.out.println("Upload directory is ready at: " + uploadDir.getAbsolutePath());
+        }
+
+        File[] files = uploadDir.listFiles();
+        if (files == null || files.length == 0) {
+            System.out.println("The directory is empty or an I/O error occurred.");
+            return uploadDir;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(consumerThreads);
+
+        for (File file : files) {
+            // Submit each file processing task to the thread pool
+            executor.submit(() -> {
+                try {
+                    // Process the file: extract, compute hash, and register
+                    File videoFile = ZipHelper.tryExtract(file);
+                    String fileHash = duplicateChecker.computeFileHash(videoFile);
+                    duplicateChecker.register(fileHash);
+
+                    // Log type of file
+                    if (file.isFile()) {
+                        System.out.println("File: " + file.getName());
+                    } else if (file.isDirectory()) {
+                        System.out.println("Directory: " + file.getName());
+                    }
+                } catch (Exception e) {
+                    // Handle exceptions to avoid thread pool termination issues
+                    System.err.println("Error processing file " + file.getName() + ": " + e.getMessage());
+                }
+            });
+        }
+
+        // Shutdown the thread pool and wait for tasks to complete
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                System.out.println("Forcing shutdown as tasks did not finish in time.");
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        return uploadDir;
     }
 }
