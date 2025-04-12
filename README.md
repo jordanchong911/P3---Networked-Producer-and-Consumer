@@ -37,7 +37,19 @@ src/main/target/config.properties
 Optional: icon.ico for .exe builds
 
 ## 🚀 How to Build
-First, configure the config.properties so that the ip address and port will be at "localhost" and "12345" respectively.
+First, configure the config.properties.
+
+### Configuration
+
+This project uses a `config.properties` file to manage its runtime settings.  
+
+Place a file named `config.properties` in the **same directory as your JAR** with the following contents:
+
+```properties
+# Server configuration
+host=127.0.0.1    # Sample IP address for socket connection host
+port=12345        # Socket server port
+```
 
 You have two options:
 
