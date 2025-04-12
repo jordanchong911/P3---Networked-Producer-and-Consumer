@@ -32,9 +32,13 @@ pom.xml
 
 src/main/java/com/stdiscm/...
 
+src/main/target/config.properties
+
 Optional: icon.ico for .exe builds
 
 ## 🚀 How to Build
+First, configure the config.properties so that the ip address and port will be at "localhost" and "12345" respectively.
+
 You have two options:
 
 🛠 Option 1: Run via VS Code (Recommended for testing)
