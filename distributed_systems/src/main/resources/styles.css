@@ -1,0 +1,28 @@
+.cell {
+    /* standard (no‑op in JavaFX) */
+    border-width: 2px;
+    border-color: transparent;
+    background-color: transparent;
+
+    /* the real JavaFX properties */
+    -fx-pref-width: 100;
+    -fx-pref-height: 80;
+    -fx-alignment: center;
+    -fx-border-width: 2px;
+    -fx-border-color: transparent;
+    -fx-background-color: transparent;
+}
+
+.cell-hover {
+    /* standard */
+    border-color: blue;
+    /* JavaFX */
+    -fx-border-color: blue;
+}
+
+.cell-selected {
+    /* standard */
+    background-color: lightblue;
+    /* JavaFX */
+    -fx-background-color: lightblue;
+}

@@ -1,10 +1,16 @@
 package com.stdiscm.gui;
 
 import com.stdiscm.consumer.ConsumerClient;
-import javafx.application.Platform;
+import com.stdiscm.consumer.ConsumerGalleryGUI;
+import com.stdiscm.shared.ConfigHelper;
+import com.stdiscm.shared.UploadStatus;
+
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -40,26 +46,64 @@ public class ConsumerMultiClientGUI {
             }
         });
     }
-
+    
     private static void launchConsumers(int count, int queueSize) {
-        for (int i = 1; i <= count; i++) {
-            int clientNumber = i;
-            Platform.runLater(() -> {
-                Stage cStage = new Stage();
-                cStage.setTitle("Consumer Client " + clientNumber);
+               String propertiesFilePath = "config.properties";
+    ConfigHelper config = new ConfigHelper(propertiesFilePath);
+        
+        int port = config.getPort();
 
-                Label statusLabel = new Label("Waiting for uploads...");
+        // Initialize the observable list for uploaded video names.
+        ObservableList<UploadStatus> progressList = FXCollections.observableArrayList();
 
-                VBox layout = new VBox(10, statusLabel);
-                layout.setPadding(new Insets(15));
-                cStage.setScene(new Scene(layout, 300, 100));
-                cStage.show();
+        // Start the ConsumerClient (server) in a separate thread.
+        ConsumerClient client = new ConsumerClient(port, count, queueSize, progressList);
+        client.start();
+        
+        ConsumerGalleryGUI.showGallery();
+        showUploadProgressStage(progressList);
+    }
 
-                // Start consumer logic
-                new Thread(() -> {
-                    ConsumerClient.run("localhost", 9999, queueSize, statusLabel);
-                }).start();
-            });
-        }
+    // Creates and shows a new stage to display upload progress.
+    private static void showUploadProgressStage(ObservableList<UploadStatus> progressList) {
+        Stage progressStage = new Stage();
+        progressStage.setTitle("Upload Progress");
+
+        // Create a TableView with two columns: File Name and Progress.
+        TableView<UploadStatus> tableView = new TableView<>(progressList);
+        tableView.setPrefWidth(400);
+
+        TableColumn<UploadStatus, String> fileCol = new TableColumn<>("File");
+        fileCol.setCellValueFactory(new PropertyValueFactory<>("fileName"));
+        fileCol.setPrefWidth(200);
+
+        TableColumn<UploadStatus, Double> progressCol = new TableColumn<>("Progress");
+        progressCol.setCellValueFactory(new PropertyValueFactory<>("progress"));
+        progressCol.setPrefWidth(180);
+        // Use a custom cell factory to display a progress bar.
+        progressCol.setCellFactory(col -> new TableCell<>() {
+            private final ProgressBar progressBar = new ProgressBar(0);
+
+            @Override
+            protected void updateItem(Double progress, boolean empty) {
+                super.updateItem(progress, empty);
+                if (empty || progress == null) {
+                    setGraphic(null);
+                } else {
+                    progressBar.setProgress(progress);
+                    setGraphic(progressBar);
+                }
+            }
+        });
+
+        tableView.getColumns().add(fileCol);
+        tableView.getColumns().add(progressCol);
+
+
+        VBox vbox = new VBox(tableView);
+        vbox.setPadding(new Insets(10));
+        Scene scene = new Scene(vbox, 410, 300);
+        progressStage.setScene(scene);
+        progressStage.show();
     }
 }
