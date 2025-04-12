@@ -6,230 +6,213 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Label;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.TilePane;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+
+import com.stdiscm.gui.ConsumerMultiClientGUI;
 import com.stdiscm.shared.ZipHelper;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.*;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public class ConsumerGalleryGUI {
 
     private static final File UPLOAD_DIR = new File("uploads");
-    private static final List<String> VIDEO_EXTS = Arrays.asList(".mp4", ".avi", ".mov", ".mkv");
+    private static final List<String> VIDEO_EXTS = List.of(".mp4", ".avi", ".mov", ".mkv");
     private static final String ZIP_EXT = ".zip";
 
-    // Replace ListView with a TilePane for grid display.
-    private TilePane videoGrid = new TilePane();
-    private MediaView mediaView = new MediaView();
+    private final TilePane videoGrid = new TilePane();
+    private final MediaView mediaView = new MediaView();
+    private final Map<File, File> extractedCache = new ConcurrentHashMap<>();
 
-    // Preview handling variables.
     private MediaPlayer previewPlayer;
-    private PauseTransition previewStopTimer;
-    private Thread previewThread;
-    private volatile boolean previewCancelled = false;
+    private PauseTransition previewDurationTimer; // ensures exactly 10 s of preview
+    private PauseTransition previewStopTimer;     // delay after exit before stopping
 
-    private MediaPlayer fullPlayer;         // active full‐video player
-    private Label currentPlayingCell;   
-    // Add this field to your class.
-    private File currentPreviewFile = null;
+    private MediaPlayer fullPlayer;
+    private Label currentPlayingCell;
 
     public static void showGallery() {
-        Platform.runLater(() -> {
-            ConsumerGalleryGUI gui = new ConsumerGalleryGUI();
-            gui.showStage();
-        });
+        Platform.runLater(() -> new ConsumerGalleryGUI().showStage());
     }
 
     private void showStage() {
         Stage primaryStage = new Stage();
         primaryStage.setTitle("Uploaded Videos");
 
-        // Setup grid layout.
+        // Grid setup
         videoGrid.setPadding(new Insets(10));
         videoGrid.setHgap(10);
         videoGrid.setVgap(10);
-        videoGrid.setPrefColumns(4); // Adjust the number of columns as needed.
+        videoGrid.setPrefColumns(4);
         videoGrid.setAlignment(Pos.TOP_LEFT);
+
         updateVideoGrid();
 
-        // Create grid cells dynamically when files change.
-        // Each cell (Label) will display the file name and will have hover/click effects.
-        // We'll update the grid in updateVideoGrid() below.
-
-        // When a cell is clicked, play the full video.
-        // The hover events are handled in the cell creation.
+        // Layout
         BorderPane layout = new BorderPane();
         layout.setLeft(videoGrid);
-        layout.setCenter(mediaView);
+        StackPane mediaHolder = new StackPane(mediaView);
+        mediaHolder.setMinSize(400, 300);
+        mediaHolder.setMaxSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
+        layout.setCenter(mediaHolder);
         BorderPane.setMargin(videoGrid, new Insets(10, 0, 10, 10));
-        BorderPane.setMargin(mediaView, new Insets(10, 100, 10, 0));
+        BorderPane.setMargin(mediaHolder, new Insets(10, 100, 10, 0));
+
+        // Bind view size
+        mediaView.fitWidthProperty().bind(mediaHolder.widthProperty());
+        mediaView.fitHeightProperty().bind(mediaHolder.heightProperty());
 
         Scene scene = new Scene(layout, 800, 500);
-        primaryStage.setScene(scene);
-
-        // Bind the MediaView's size.
-        mediaView.setPreserveRatio(true);
-        mediaView.fitWidthProperty().bind(
-            scene.widthProperty()
-                 .subtract(videoGrid.widthProperty())
-                 .subtract(100)
+        scene.getStylesheets().add(
+            ConsumerMultiClientGUI.class.getResource("/styles.css").toExternalForm()
         );
-        mediaView.fitHeightProperty().bind(scene.heightProperty());
-
+        primaryStage.setScene(scene);
         primaryStage.show();
-        startWatcherThread();
+
+        startDirectoryWatcher();
     }
 
-    /**
-     * Updates the grid with file cells.
-     */
     private void updateVideoGrid() {
-        if (!UPLOAD_DIR.exists()) {
-            UPLOAD_DIR.mkdirs();
-        }
-
-        File[] files = UPLOAD_DIR.listFiles((dir, name) ->
-                VIDEO_EXTS.stream().anyMatch(name.toLowerCase()::endsWith)
-                        || name.toLowerCase().endsWith(ZIP_EXT));
-
-        Platform.runLater(() -> {
-            videoGrid.getChildren().clear();
-            if (files != null) {
-                for (File file : files) {
-                    Label cell = createGridCell(file);
-                    videoGrid.getChildren().add(cell);
-                }
-            }
+        UPLOAD_DIR.mkdirs();
+        File[] files = UPLOAD_DIR.listFiles((dir, name) -> {
+            String lower = name.toLowerCase();
+            return VIDEO_EXTS.stream().anyMatch(lower::endsWith)
+                || lower.endsWith(ZIP_EXT);
         });
+
+        videoGrid.getChildren().clear();
+        if (files != null) {
+            videoGrid.getChildren().addAll(
+                Arrays.stream(files)
+                      .map(this::createGridCell)
+                      .collect(Collectors.toList())
+            );
+        }
     }
 
-    /**
-     * Creates a grid cell (Label) for the given file with hover and click effects.
-     */
+
     private Label createGridCell(File file) {
         Label cell = new Label(file.getName());
-        cell.setPrefSize(100, 80); // Adjust cell size as needed.
-        cell.setAlignment(Pos.CENTER);
-        cell.setStyle("-fx-border-color: transparent; -fx-background-color: transparent;");
+        cell.getStyleClass().add("cell");
+        cell.setPickOnBounds(true);
+        cell.setOnMouseEntered(e -> {
+            // 1) Cancel any pending stop
+            if (fullPlayer != null) {
+                return;
+            }
+            cell.getStyleClass().add("cell-hover");
+
+            if (previewStopTimer != null) {
+                previewStopTimer.stop();
+            }
         
-        // Hover effect: outline the cell.
-        cell.addEventHandler(MouseEvent.MOUSE_ENTERED, e -> {
-            cell.setStyle("-fx-border-color: blue; -fx-border-width: 2px;");
-            previewVideo(file);
+            startPreview(file);
         });
-        cell.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
-            cell.setStyle("-fx-border-color: transparent; -fx-background-color: transparent;");
-            stopPreview();
-        });
-        // Click effect: fill the cell and play full video.
-        cell.addEventHandler(MouseEvent.MOUSE_CLICKED, e -> {
-            stopPreview();
-             if (currentPlayingCell == null || !cell.equals(currentPlayingCell)) {
-                stopFullVideo();                  // stop any old video
-                currentPlayingCell = cell;        // mark this one
-                cell.setStyle("-fx-background-color: lightblue;");
-                playVideo(file);
+        
+        cell.setOnMouseExited(e -> {
+            // 1) Remove hover style
+            if (fullPlayer != null) {
+                return;
             }
-            else {
-                stopFullVideo();
-            }
-        });
-        cell.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
-            // only clear hover‐style if this cell is _not_ the currently playing one
+
             if (cell != currentPlayingCell) {
-                cell.setStyle("-fx-border-color: transparent; -fx-background-color: transparent;");
+                cell.getStyleClass().remove("cell-hover");
             }
-            stopPreview();
+                
+            // 3) Schedule stopPreview after 2 seconds
+            if (previewStopTimer != null) {
+                previewStopTimer.stop();
+            }
+            previewStopTimer = new PauseTransition(Duration.seconds(2));
+            previewStopTimer.setOnFinished(evt -> stopPreview());
+            previewStopTimer.play();
         });
-        
-        
+
+        cell.setOnMouseClicked(e -> {
+            System.out.print("clicked " + file.getName());
+            cell.getStyleClass().remove("cell-hover");
+            stopPreview();
+            System.out.print(cell == currentPlayingCell);
+            if (cell == currentPlayingCell) {
+                stopFullVideo();
+            } else {
+                stopFullVideo();
+                currentPlayingCell = cell;
+                cell.getStyleClass().add("cell-selected");
+                playVideo(file, cell);
+            }
+        });
+
         return cell;
     }
 
-    /**
-     * Plays the full video. If the file is a zip archive, it extracts and uses the contained video.
-     */
-    private void playVideo(File file) {
+    private File resolveVideo(File file) throws IOException {
+        if (!file.getName().toLowerCase().endsWith(ZIP_EXT)) {
+            return file;
+        }
+        return extractedCache.computeIfAbsent(file, f -> {
+                return ZipHelper.tryExtract(f);
+        });
+    }
+
+    private void playVideo(File file, Label cell) {
         try {
-            File videoFile = ZipHelper.tryExtract(file);
-            Media media = new Media(videoFile.toURI().toString());
-            fullPlayer = new MediaPlayer(media);
-    
-            // When full video ends, clear the flag and cell selection style
-            fullPlayer.setOnEndOfMedia(this::stopFullVideo);
-            fullPlayer.setOnStopped   (this::stopFullVideo);
-    
+            File video = resolveVideo(file);
+            fullPlayer  = new MediaPlayer(new Media(video.toURI().toString()));
             mediaView.setMediaPlayer(fullPlayer);
             fullPlayer.play();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
-    
 
-    private void previewVideo(File file) {
-        // If the file is already being previewed, don't restart.
-        if (currentPlayingCell != null) {
-            return;
-        }
-        if (file.equals(currentPreviewFile)) {
-            return;
-        }
-        
-        // Otherwise, stop any current preview and update the current file.
-        stopPreview();
-        currentPreviewFile = file;
-        
-        previewCancelled = false;
-        previewThread = new Thread(() -> {
-            try {
-                File videoFile = ZipHelper.tryExtract(file);
-                if (previewCancelled) return;
-                Media media = new Media(videoFile.toURI().toString());
-                Platform.runLater(() -> {
-                    if (previewCancelled) return;
-                    previewPlayer = new MediaPlayer(media);
-                    mediaView.setMediaPlayer(previewPlayer);
-                    previewPlayer.play();
-                    previewStopTimer = new PauseTransition(Duration.seconds(10));
-                    previewStopTimer.setOnFinished(e -> stopPreview());
-                    previewStopTimer.play();
-                });
-            } catch (Exception e) {
-                e.printStackTrace();
+    private void startPreview(File file) {
+        try {
+            File video = resolveVideo(file);
+            if (previewPlayer != null) {
+                previewPlayer.stop();
+                previewPlayer.dispose();
             }
-        });
-        previewThread.setDaemon(true);
-        previewThread.start();
+            previewPlayer = new MediaPlayer(new Media(video.toURI().toString()));
+            mediaView.setMediaPlayer(previewPlayer);
+            previewPlayer.play();
+
+            previewDurationTimer = new PauseTransition(Duration.seconds(10));
+            previewDurationTimer.setOnFinished(evt -> stopPreview());
+            previewDurationTimer.play();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
-    
+
     private void stopPreview() {
-        if (currentPlayingCell != null) {
-            return;
-        }
-        previewCancelled = true;
-        if (previewThread != null && previewThread.isAlive()) {
-            previewThread.interrupt();
-            previewThread = null;
-        }
         if (previewStopTimer != null) {
             previewStopTimer.stop();
             previewStopTimer = null;
+        }
+        if (previewDurationTimer != null) {
+            previewDurationTimer.stop();
+            previewDurationTimer = null;
         }
         if (previewPlayer != null) {
             previewPlayer.stop();
             previewPlayer.dispose();
             previewPlayer = null;
         }
-        currentPreviewFile = null;
     }
 
     private void stopFullVideo() {
@@ -239,24 +222,35 @@ public class ConsumerGalleryGUI {
             fullPlayer = null;
         }
         if (currentPlayingCell != null) {
-            currentPlayingCell.setStyle("-fx-background-color: transparent;");
+            currentPlayingCell.getStyleClass().remove("cell-selected");
             currentPlayingCell = null;
+            
         }
     }
-    
 
-    private void startWatcherThread() {
-        Thread watcher = new Thread(() -> {
-            while (true) {
+    private void startDirectoryWatcher() {
+        try {
+            WatchService watcher = FileSystems.getDefault().newWatchService();
+            UPLOAD_DIR.toPath().register(watcher,
+                StandardWatchEventKinds.ENTRY_CREATE,
+                StandardWatchEventKinds.ENTRY_DELETE);
+
+            Thread watcherThread = new Thread(() -> {
                 try {
-                    Thread.sleep(3000);
-                    updateVideoGrid();
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-        });
-        watcher.setDaemon(true);
-        watcher.start();
+                    while (true) {
+                        WatchKey key = watcher.take();
+                        List<WatchEvent<?>> events = key.pollEvents();
+                        if (!events.isEmpty()) {
+                            Platform.runLater(this::updateVideoGrid);
+                        }
+                        key.reset();
+                    }
+                } catch (InterruptedException ignored) { }
+            });
+            watcherThread.setDaemon(true);
+            watcherThread.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }

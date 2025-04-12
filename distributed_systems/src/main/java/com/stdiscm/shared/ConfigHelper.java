@@ -6,7 +6,7 @@ import java.util.Properties;
 
 public class ConfigHelper {
     private static final String DEFAULT_HOST = "localhost";
-    private static final int DEFAULT_PORT = 12345;
+    private static final int DEFAULT_PORT = 12346;
 
     private Properties properties;
 

@@ -16,11 +16,9 @@ public class ProducerClient {
 
     public static void sendFile(File videoFile, String host, int port, ObservableList<UploadStatus> uploadStatuses) {
 
-        
         try (Socket socket = new Socket(host, port);
-             DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-             DataInputStream dis = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-         ) {
+                DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+                DataInputStream dis = new DataInputStream(new BufferedInputStream(socket.getInputStream()));) {
             writeString(dos, videoFile.getName());
 
             // Wait for server readiness
@@ -43,7 +41,7 @@ public class ProducerClient {
                     } else if ("DUPLICATE".equals(finalResponse)) {
                         updateLatestStatus("duplicate", uploadStatuses);
                         System.out.println("Upload duplicate: " + videoFile.getName());
-                    } else{
+                    } else {
                         updateLatestStatus("failed", uploadStatuses);
                         System.err.println("Upload failed or not acknowledged for file: " + videoFile.getName());
                     }
@@ -62,10 +60,11 @@ public class ProducerClient {
             updateLatestStatus("failed", uploadStatuses);
             System.err.println("Failed to upload file: " + videoFile.getName());
             e.printStackTrace();
-        } 
+        }
     }
 
-    public static void sendFolder(File folder, String host, int port, Label status, ProgressBar progBar, ObservableList<UploadStatus> uploadStatuses) {
+    public static void sendFolder(File folder, String host, int port, Label status, ProgressBar progBar,
+            ObservableList<UploadStatus> uploadStatuses) {
         File[] videoFiles = folder.listFiles((dir, name) -> {
             String lower = name.toLowerCase();
             return lower.endsWith(".mp4") || lower.endsWith(".avi") || lower.endsWith(".mov") || lower.endsWith(".mkv");
@@ -109,8 +108,15 @@ public class ProducerClient {
         });
     }
 
-        private static void sendFileData(File file, DataOutputStream dos, Socket socket,
-                                     ObservableList<UploadStatus> uploadStatuses) throws IOException {
+    private static void writeString(DataOutputStream dos, String message) throws IOException {
+        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
+        dos.writeInt(bytes.length);
+        dos.write(bytes);
+        dos.flush();
+    }
+
+    private static void sendFileData(File file, DataOutputStream dos, Socket socket,
+            ObservableList<UploadStatus> uploadStatuses) throws IOException {
         writeString(dos, file.getName());
         long fileLength = file.length();
         dos.writeLong(fileLength);
@@ -131,11 +137,35 @@ public class ProducerClient {
         }
     }
 
-    private static void writeString(DataOutputStream dos, String message) throws IOException {
-        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
-        dos.writeInt(bytes.length);
-        dos.write(bytes);
-        dos.flush();
+    /**
+     * Compresses the given file if beneficial, updates uploadStatuses, and returns
+     * the file to actually send (either the .zip or the original).
+     */
+    private static File prepareFileForUpload(File original, ObservableList<UploadStatus> uploadStatuses) {
+        String baseName = stripExtension(original.getName());
+        File zipFile = new File(original.getParent(), baseName + ".zip");
+
+        boolean compressed = ZipHelper.compressFile(original, zipFile);
+        return compressed ? zipFile : original;
+    }
+
+    /**
+     * Deletes the temporary zip file if it exists.
+     */
+    private static void cleanupTempZip(File original) {
+        String baseName = stripExtension(original.getName());
+        File zipFile = new File(original.getParent(), baseName + ".zip");
+        if (zipFile.exists() && !zipFile.delete()) {
+            System.err.println("Failed to delete temporary zip: " + zipFile.getName());
+        }
+    }
+
+    /**
+     * Utility to strip the extension from a filename.
+     */
+    private static String stripExtension(String filename) {
+        int dotIndex = filename.lastIndexOf('.');
+        return (dotIndex > 0) ? filename.substring(0, dotIndex) : filename;
     }
 
     /**
@@ -150,35 +180,4 @@ public class ProducerClient {
             e.printStackTrace();
         }
     }
-
-    /**
- * Compresses the given file if beneficial, updates uploadStatuses, and returns
- * the file to actually send (either the .zip or the original).
- */
-private static File prepareFileForUpload(File original, ObservableList<UploadStatus> uploadStatuses) {
-    String baseName = stripExtension(original.getName());
-    File zipFile = new File(original.getParent(), baseName + ".zip");
-
-    boolean compressed = ZipHelper.compressFile(original, zipFile);
-    return compressed ? zipFile : original;
-}
-
-/**
- * Deletes the temporary zip file if it exists.
- */
-private static void cleanupTempZip(File original) {
-    String baseName = stripExtension(original.getName());
-    File zipFile = new File(original.getParent(), baseName + ".zip");
-    if (zipFile.exists() && !zipFile.delete()) {
-        System.err.println("Failed to delete temporary zip: " + zipFile.getName());
-    }
-}
-
-/**
- * Utility to strip the extension from a filename.
- */
-private static String stripExtension(String filename) {
-    int dotIndex = filename.lastIndexOf('.');
-    return (dotIndex > 0) ? filename.substring(0, dotIndex) : filename;
-}
 }
