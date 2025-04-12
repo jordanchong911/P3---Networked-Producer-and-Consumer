@@ -41,7 +41,6 @@ public class ConsumerWorker implements Runnable {
             try {
                 QueuedUpload upload = videoQueue.take(); // blocks
                 while (!upload.isReady()) {Thread.sleep(10);
-                System.out.println("ready" + upload.isReady());
                 } // Sleep for a while before checking again
                 processUpload(upload);
             } catch (InterruptedException e) {

@@ -143,10 +143,8 @@ public class ConsumerGalleryGUI {
         });
 
         cell.setOnMouseClicked(e -> {
-            System.out.print("clicked " + file.getName());
             cell.getStyleClass().remove("cell-hover");
             stopPreview();
-            System.out.print(cell == currentPlayingCell);
             if (cell == currentPlayingCell) {
                 stopFullVideo();
             } else {

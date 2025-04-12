@@ -88,26 +88,6 @@ public class ProducerClient {
         Platform.runLater(() -> status.setText("Upload complete for folder: " + folder.getName() + "\nWaiting..."));
     }
 
-    private static void addStatus(String filename, String status, ObservableList<UploadStatus> uploadStatuses) {
-        UploadStatus uploadStatus = new UploadStatus(filename, status);
-        Platform.runLater(() -> {
-            uploadStatuses.add(uploadStatus);
-            // Keep only the 5 most recent uploads
-            if (uploadStatuses.size() > 5) {
-                uploadStatuses.remove(0);
-            }
-        });
-    }
-
-    public static void updateLatestStatus(String newStatus, ObservableList<UploadStatus> uploadStatuses) {
-        Platform.runLater(() -> {
-            if (!uploadStatuses.isEmpty()) {
-                UploadStatus latest = uploadStatuses.get(uploadStatuses.size() - 1);
-                latest.setStatus(newStatus);
-            }
-        });
-    }
-
     private static void writeString(DataOutputStream dos, String message) throws IOException {
         byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
         dos.writeInt(bytes.length);
@@ -158,6 +138,27 @@ public class ProducerClient {
         if (zipFile.exists() && !zipFile.delete()) {
             System.err.println("Failed to delete temporary zip: " + zipFile.getName());
         }
+    }
+
+
+    private static void addStatus(String filename, String status, ObservableList<UploadStatus> uploadStatuses) {
+        UploadStatus uploadStatus = new UploadStatus(filename, status);
+        Platform.runLater(() -> {
+            uploadStatuses.add(uploadStatus);
+            // Keep only the 5 most recent uploads
+            if (uploadStatuses.size() > 5) {
+                uploadStatuses.remove(0);
+            }
+        });
+    }
+
+    public static void updateLatestStatus(String newStatus, ObservableList<UploadStatus> uploadStatuses) {
+        Platform.runLater(() -> {
+            if (!uploadStatuses.isEmpty()) {
+                UploadStatus latest = uploadStatuses.get(uploadStatuses.size() - 1);
+                latest.setStatus(newStatus);
+            }
+        });
     }
 
     /**
